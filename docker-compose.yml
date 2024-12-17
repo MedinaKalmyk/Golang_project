@@ -1,0 +1,62 @@
+version: '3.4'
+
+services:
+
+  nginx:
+    build:
+      context : ./nginx/
+    depends_on:
+      - server1
+    ports:
+      - "80:80"
+    restart: always
+
+  server1:
+    env_file:
+      - .env
+    build:
+      context: ./authService/
+    environment:
+      SERVERID: 1
+      DATABASE: &db ${POSTGRES_DB}
+      USERNAME: &db_username ${POSTGRES_DB}
+      PASSWORD: &db_password ${POSTGRES_PASSWORD}
+      XDEBUG_SESSION: docker-server
+    depends_on:
+      - postgres
+    restart: always
+  postgres:
+    image: postgres:11.5-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: *db
+      POSTGRES_USER: *db_username
+      POSTGRES_PASSWORD: *db_password
+    healthcheck:
+      test: [ "CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}'" ]
+      interval: 10s
+      timeout: 1s
+      retries: 5
+    volumes:
+      - pg-data:/var/lib/postgresql/data:cached
+    ports:
+      - '0.0.0.0:15432:5432' # Port 15433 for connecting from localhost using, for example, data-grip
+  migrations:
+    image: ghcr.io/kukymbr/goose-docker:3.22.0
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - GOOSE_DRIVER=postgres
+      - GOOSE_DBSTRING=host=postgres port=5432 user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB}
+      - GOOSE_VERBOSE=true
+      - GOOSE_COMMAND_ARG=20230607203836
+    volumes:
+      - ./authService/internal/db/migrations:/migrations
+
+volumes:
+  pg-data:
+  migrations:
